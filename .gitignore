@@ -1,0 +1,13 @@
+idor-multitenant-saas
+
+idor-multitenant-saas/venv/
+idor-multitenant-saas/__pycache__/
+idor-multitenant-saas/*.pyc
+
+idor-multitenant-saas/node_modules/
+idor-multitenant-saas/.next/
+
+idor-multitenant-saas/.env
+
+idor-multitenant-saas/dist/
+idor-multitenant-saas/build/
