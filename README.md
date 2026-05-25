@@ -71,7 +71,7 @@ Modern ecommerce/SaaS-style application built with:
 ```text
 vulnerable-apps/
 │
-├── idor-multitenant-saas/
+├── idor-multitenant-saas/ 
 ```
 
 ---
