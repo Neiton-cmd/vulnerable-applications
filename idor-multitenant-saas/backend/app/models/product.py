@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import relationship
 from ..database import Base
 
 
@@ -10,3 +11,5 @@ class Product(Base):
     price = Column(Integer, nullable=False)
     image = Column(String, nullable=False)
     description = Column(String, nullable=False)
+
+    reviews = relationship("Review", back_populates="product")
