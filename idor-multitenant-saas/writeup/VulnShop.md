@@ -156,7 +156,7 @@ Add to /etc/hosts
 ```
 
 Website:
-![](images/Pasted image 20260530145552.png)
+![](images/Pasted%20image%2020260530145552.png)
 
 Before interacting with the application, additional enumeration was performed to identify hidden content and attack surfaces.
 
@@ -201,14 +201,14 @@ ffuf -u http://$TARGET/  -H 'Host: FUZZ.$TARGET' -w /home/kali/wordlists/discove
 
 No additional subdomains were identified during virtual host enumeration, so the focus remained on the web application.
 
-![](images/Pasted image 20260530150410.png)
+![](images/Pasted%20image%2020260530150410.png)
 
 > After registering a new account and logging in, I began reviewing the application's functionality through Burp Suite. Wappalyzer identified the stack as Nginx, Next.js, and React. During this process, a non-standard response header was observed:
 
 > `X-PDF-Generator: wkhtmltopdf/0.12.6`
 
 > This suggests the application generates PDF reports using wkhtmltopdf, making it an interesting target for further investigation.
-![](images/Pasted image 20260530155928.png)
+![](images/Pasted%20image%2020260530155928.png)
 
 ```
 X-PDF-Generator: wkhtmltopdf/0.12.6
@@ -222,28 +222,28 @@ https://nvd.nist.gov/vuln/detail/CVE-2022-35583
 
 The focus now shifts to finding an injection point that reaches the PDF generation process.
 
-![](images/Pasted image 20260530160324.png)
+![](images/Pasted%20image%2020260530160324.png)
 
 The `/api/orders` endpoint is particularly interesting because it exposes a user-controlled `note` field. Since this data may be included in generated reports, the request was sent to Burp Repeater to test for HTML and JavaScript injection.
 PUT request where we can change a note
-![](images/Pasted image 20260530160736.png)
+![](images/Pasted%20image%2020260530160736.png)
 
 The response contains a `user_id` field with a value of `7`. This raises the possibility of an IDOR vulnerability, so the next step is to request orders belonging to other users by modifying the order ID.
-![](images/Pasted image 20260530160708.png)
+![](images/Pasted%20image%2020260530160708.png)
 
 The response only contains orders associated with the current account, indicating that access controls are enforced for standard requests.
-![](images/Pasted image 20260530161028.png)
+![](images/Pasted%20image%2020260530161028.png)
 
 However, requesting order `1` returns data belonging to `user_id: 2`, confirming that orders can be accessed without ownership validation.
-![](images/Pasted image 20260530161207.png)
+![](images/Pasted%20image%2020260530161207.png)
 
 To determine whether the IDOR also affects write operations, a `PUT` request was sent to `/api/orders/1` with a modified `note` value.
 
-![](images/Pasted image 20260530161419.png)
+![](images/Pasted%20image%2020260530161419.png)
 
 At this point, we have an IDOR that allows modification of other users' orders and a vulnerable `wkhtmltopdf` instance. The remaining task is to identify an injection point that reaches the PDF generation process. Since the `note` field is user-controlled, it becomes the primary target for HTML and JavaScript injection testing. As the rendering process is blind and session cookies are protected with `HttpOnly`, out-of-band interaction is used to confirm code execution.
 
-![](images/Pasted image 20260530162059.png)
+![](images/Pasted%20image%2020260530162059.png)
 
 Payload
 
@@ -259,7 +259,7 @@ nc -lvnp 9999
 
 And we get a response from remote server
 
-![](images/Pasted image 20260530162205.png)
+![](images/Pasted%20image%2020260530162205.png)
 
 The callback confirms that the payload is being processed by `wkhtmltopdf`. Since only orders with a `disputed` status are included in generated reports, the identified IDOR can be used to modify another user's order and inject a payload into the PDF generation workflow.
 
@@ -277,14 +277,14 @@ Listener
 nc -lvnp 9999
 ```
 
-![](images/Pasted image 20260530163427.png)
+![](images/Pasted%20image%2020260530163427.png)
 
 Successfully catch a response 
-![](images/Pasted image 20260530163407.png)
+![](images/Pasted%20image%2020260530163407.png)
 
 Decoding 
 
-![](images/Pasted image 20260530163756.png)
+![](images/Pasted%20image%2020260530163756.png)
 
 After decoding the response, `/etc/passwd` is recovered. The file reveals a user named `jonny` with a home directory at `/home/jonny`, making `/home/jonny/.ssh/id_rsa` a valuable target. Repeating the attack against this file returns a Base64-encoded SSH private key, providing access as `jonny` 
 
@@ -294,7 +294,7 @@ chmod 600 jonny-ssh
 ssh -i jonny-ssh jonny@172.20.10.2
 ```
 
-![](images/Pasted image 20260530164053.png)
+![](images/Pasted%20image%2020260530164053.png)
 
 ### Privilege Escalation to Sarah
 
@@ -391,7 +391,7 @@ curl http://$TARGET:8888/log-report -o log-report
 
 Analysis in Ghidra begins at the `entry()` function, which eventually leads to the binary's main logic.
 
-![](images/Pasted image 20260530183926.png)
+![](images/Pasted%20image%2020260530183926.png)
 
 The `entry()` function passes execution to `FUN_00101245`, making it the next function of interest for analysis.
 
@@ -488,7 +488,7 @@ Three arguments:
 
 The encoded data is stored in `DAT_00102010` and `DAT_00102030`. Since the function is called with lengths of `0x16` and `0x17`, these arrays contain 22 and 23 bytes respectively. Examining `DAT_00102030` reveals the following encoded byte sequence
 
-![](images/Pasted image 20260530190101.png)
+![](images/Pasted%20image%2020260530190101.png)
 
 Our variable starts from `00102030 + 0x17 - 1 = 00102046` 
 ```
@@ -516,7 +516,7 @@ print(''.join(chr(b ^ key) for b in enc_out))
 
 We see that binary uses a `/home/jonny/.report_out` directory 
 
-![](images/Pasted image 20260530190822.png)
+![](images/Pasted%20image%2020260530190822.png)
 
 We can do the same with `DAT_00102010` , as a result array 
 
@@ -552,7 +552,7 @@ Is there any validation on the content being copied?
   No validation what so ever — raw byte-for-byte copy from input to output. If .report_in contains an SSH public key, sarah will write exactly that.
   Key conclusion: jonny controls the input content, sarah writes the output — the only question left is when exactlysarah opens .report_out for writing, and whether there is a window to redirect it somewhere else before that happens. This leads back to sleep(0x1e) in main().
 
-![](images/Pasted image 20260530191732.png)
+![](images/Pasted%20image%2020260530191732.png)
 
 `sleep(0x1e)` = sleep(30) — 30 second delay between the security check and the write.
 
@@ -651,7 +651,7 @@ Wait for binary to finish
 
 Binary woke up, opened .report_out as sarah, followed the symlink, and wrote the public key into authorized_keys.
 
-![](images/Pasted image 20260530192615.png)
+![](images/Pasted%20image%2020260530192615.png)
 
 
 There transfer a `/tmp/attacker_key` to local machine 
@@ -665,7 +665,7 @@ And connect by ssh
 ssh -i attacker_key sarah@$TARGET
 ```
 
-![](images/Pasted image 20260530193921.png)
+![](images/Pasted%20image%2020260530193921.png)
 
 
 ### Privilege Escalation to root
@@ -743,7 +743,7 @@ Listener
 rlwrap nc -lnvp 9002
 ```
 
-![](images/Pasted image 20260530195628.png)
+![](images/Pasted%20image%2020260530195628.png)
 
 
 ## Conclusion
