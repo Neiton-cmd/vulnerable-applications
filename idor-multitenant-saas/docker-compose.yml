@@ -2,14 +2,12 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - backend
 
   backend:
     build: ./backend
-    ports:
-      - "8000:8000"
     volumes:
       - reports_data:/var/www/static/reports
     depends_on:
@@ -21,11 +19,6 @@ services:
       POSTGRES_USER: appuser
       POSTGRES_PASSWORD: apppass
       POSTGRES_DB: appdb
-    ports:
-      - "5433:5432"
-<<<<<<< HEAD
-=======
 
 volumes:
   reports_data:
->>>>>>> 74e8645 (Add full attack chain, DNS, vulnshop.htb rename, README)

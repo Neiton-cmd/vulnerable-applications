@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import User
 
-SECRET_KEY = "supersecretkey"
+SECRET_KEY = "7adfcfe29cbe3bb5de5b7d0804f3a07432f59edd33e418eaac733b3d3a81796a"
 ALGORITHM = "HS256"
 
 
