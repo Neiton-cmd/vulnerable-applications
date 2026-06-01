@@ -7,8 +7,8 @@ const nextConfig = {
         source: "/(.*)",
         headers: [
           {
-            key: "X-PDF-Generator",
-            value: "wkhtmltopdf/0.12.6",
+            key: "X-Notification-Service",
+            value: "enabled",
           },
         ],
       },

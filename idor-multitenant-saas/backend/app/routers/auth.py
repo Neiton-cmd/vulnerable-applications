@@ -13,6 +13,7 @@ router = APIRouter()
 class RegisterRequest(BaseModel):
     email: str
     password: str
+    notification_url: str | None = None
 
 
 @router.post("/login")
@@ -64,6 +65,7 @@ def register(data: RegisterRequest, response: Response):
         email=data.email,
         password=hash_password(data.password),
         is_admin=False,
+        notification_url=data.notification_url,
     )
     db.add(user)
     db.commit()

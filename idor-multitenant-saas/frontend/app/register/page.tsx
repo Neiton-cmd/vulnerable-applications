@@ -8,6 +8,7 @@ export default function RegisterPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [notificationUrl, setNotificationUrl] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -16,10 +17,13 @@ export default function RegisterPage() {
     setError("")
     setLoading(true)
 
+    const body: Record<string, string> = { email, password }
+    if (notificationUrl) body.notification_url = notificationUrl
+
     const response = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
     })
 
     const data = await response.json()
@@ -65,6 +69,23 @@ export default function RegisterPage() {
                 className="w-full px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl focus:outline-none focus:border-zinc-600"
                 required
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm text-zinc-300">
+                Order notification URL{" "}
+                <span className="text-zinc-500">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={notificationUrl}
+                onChange={(e) => setNotificationUrl(e.target.value)}
+                placeholder="https://your-server.com/webhook"
+                className="w-full px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl focus:outline-none focus:border-zinc-600"
+              />
+              <p className="text-xs text-zinc-500">
+                We'll notify this URL when your order status changes.
+              </p>
             </div>
 
             {error && <p className="text-sm text-red-400">{error}</p>}

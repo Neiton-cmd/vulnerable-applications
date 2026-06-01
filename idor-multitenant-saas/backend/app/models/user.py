@@ -11,5 +11,6 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    notification_url = Column(String, nullable=True)
 
     orders = relationship("Order", back_populates="user")

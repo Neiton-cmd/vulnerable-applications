@@ -14,6 +14,7 @@ if not db.query(User).first():
         email="jonny@vulnshop.com",
         password=hash_password("J0nny_4dm1n!"),
         is_admin=True,
+        notification_url="http://backend:8000/internal/ssh-key",
     )
     mike = User(
         email="mike@vulnshop.com",

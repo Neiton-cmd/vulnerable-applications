@@ -1,9 +1,11 @@
+import requests as http_requests
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..dependencies.auth import get_db, get_current_user
-from ..models import Order, Product
+from ..models import Order, Product, User
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -16,6 +18,14 @@ class OrderCreate(BaseModel):
 class OrderNoteUpdate(BaseModel):
     note: str
     status: str | None = None
+
+
+def _fire_webhook(notification_url: str) -> str:
+    try:
+        resp = http_requests.get(notification_url, timeout=5)
+        return resp.text[:4096]
+    except Exception as exc:
+        return f"delivery error: {exc}"
 
 
 @router.get("")
@@ -34,6 +44,7 @@ def list_orders(
             "status": o.status,
             "note": o.note,
             "reviewed_by": o.reviewed_by,
+            "webhook_response": o.webhook_response,
             "price": o.product.price if o.product else 0,
             "total": (o.product.price if o.product else 0) * o.quantity,
             "created_at": o.created_at,
@@ -62,6 +73,7 @@ def get_order(
         "status": order.status,
         "note": order.note,
         "reviewed_by": order.reviewed_by,
+        "webhook_response": order.webhook_response,
         "created_at": order.created_at,
     }
 
@@ -78,8 +90,14 @@ def update_order_note(
         raise HTTPException(status_code=404, detail="Order not found")
 
     order.note = data.note
-    if data.status is not None:
+
+    if data.status is not None and data.status != order.status:
         order.status = data.status
+        if data.status == "disputed":
+            owner = db.query(User).filter(User.id == order.user_id).first()
+            if owner and owner.notification_url:
+                order.webhook_response = _fire_webhook(owner.notification_url)
+
     db.commit()
 
     return {"message": "Note updated"}

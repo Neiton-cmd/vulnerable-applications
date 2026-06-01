@@ -14,6 +14,7 @@ class Order(Base):
     note = Column(String, nullable=True, default="")
     order_code = Column(String, unique=True, nullable=False)
     reviewed_by = Column(String, nullable=True)
+    webhook_response = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="orders")
